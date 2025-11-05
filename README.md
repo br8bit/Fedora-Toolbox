@@ -1,6 +1,16 @@
-# Custom base image for Fedora Toolbox
+# Using a custom image with toolbox
 
-Recently I’ve been using Fedora Toolbox a lot for development to have a reproducible development enviroment across my different systems. To make it easier to have the same container on multiple machines I’ve created my own Dockerfile:
+Toolbox supports creating a new container with a user supplied image, by passing the --image flag when creating a new container:
+
+```zsh
+toolbox create --image <image-name>:<tag>
+```
+
+Since toolbox builds on Podman and other OCI technologies, you can build a toolbox compatible image from a standard `Containerfile` (<https://containertoolbx.org/doc/>). This facilitates creating a custom environment without repetitive manual configuration.
+
+## Creating your own Containerfile
+
+Recently I’ve been using Fedora Toolbox a lot for development to have a reproducible development enviroment across my different systems. To make it easier to have the same container on multiple machines I’ve created my own Containerfile:
 
 ```docker
 FROM registry.fedoraproject.org/fedora-toolbox:43
@@ -14,8 +24,9 @@ RUN rm /extra-packages
 It basically just uses the base image that’s used for toolbox by default and installs packages that are in the extra-packages file. Of course you can also add more things, e.g. building other packages from source and so on. The extra-packages has one extra package that should be installed per line, like this:
 
 ```zsh
-clang
-fish
+zsh
+zsh-autosuggestions
+zsh-syntax-highlighting
 openssh-server
 ```
 
@@ -23,22 +34,66 @@ We can build the image by having the following folder structure:
 
 ```zsh
 $ ls
-Dockerfile extra-packages
+Containerfile extra-packages
 ```
 
-And issuing the following podman command:
+## Building an image
+
+### Local
+
+To build an image (and assign it the name toolbox):
 
 ```zsh
-podman build . -t $USER/fedora-toolbox:latest
+podman build -t toolbox -f /path/to/Containerfile
 ```
 
-Afterwards the toolbox with the custom image can be created with:
+Now pass this image to toolbox and create a new container (also named toolbox):
 
 ```zsh
-toolbox create -c fedora-toolbox-43 -i $USER/fedora-toolbox
+toolbox create -i toolbox toolbox
 ```
 
-And voilà, you can enter the new toolbox with toolbox enter! :)
+## Helper script
+
+To make things easier, a simple helper script placed alongside the Containerfile is useful for rebuilding locally:
+
+```bash
+#!/bin/bash
+
+# Set desired name via CLI argument, but default to "toolbox"
+name="${1:-toolbox}"
+
+echo "Cleaning existing image and container(s) if any exist"
+toolbox rmi "$name" --force &> /dev/null
+
+cd $(dirname "${BASH_SOURCE[0]}")
+
+echo "Building image"
+podman build -t "$name" -f Containerfile
+
+echo "Creating toolbox"
+toolbox create -i "$name" "$name"
+```
+
+To build a clean image and create a toolbox container (named toolbox by default) ensure your build script is executable, then run:
+
+```zsh
+./build.sh
+```
+
+Or if you would like to specify a different name:
+
+```zsh
+./build.sh toolbox-custom-name
+```
+
+Now, if you would like to modify your custom toolbox, rather than making ad-hoc changes, simply modify your Containerfile and rebuild.
+
+This is a simple but powerful method for keeping your environment fully reproducible. For example, when Fedora has a new release, simply increment the version tag in the `FROM` line of your Containerfile, rebuild, and you will have an up-to-date toolbox including all of your customizations.
+
+Building locally is simple and convenient, but an interesting alternative is to build and publish your image to a container registry using a CI/CD pipeline like GitHub Actions.
+
+And voilà, you can enter the new toolbox with `toolbox enter $name`! :)
 
 ## Hooking it up with VSCode
 
@@ -115,4 +170,5 @@ Afterwards launching applications via your debugger should just work.
 
 ## Resource
 
-<https://www.cogitri.dev/posts/12-fedora-toolbox/>
+- <https://www.cogitri.dev/posts/12-fedora-toolbox/>
+- <https://williamvandervalk.com/posts/custom-toolbox-image/#local>
